@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地城冒險者：真實深淵</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        :root {
+            --accent-color: #ff4444;
+            --ghost-color: #00f2ff;
+            --gold-color: #ffcc00;
+            --bg-panel: rgba(15, 15, 20, 0.9);
+        }
+
+        body {
+            margin: 0;
+            background-color: #000;
+            color: #fff;
+            font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* UI 面板 */
+        .info-panel {
+            position: absolute;
+            top: 25px;
+            left: 25px;
+            background: var(--bg-panel);
+            padding: 18px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 4px solid var(--gold-color);
+            width: 240px;
+            pointer-events: none;
+            z-index: 10;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border-radius: 4px;
+        }
+
+        .stat-line {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .stat-label { color: #aaa; }
+        .stat-val { font-weight: bold; font-family: 'Courier New', monospace; }
+        .val-highlight { color: var(--gold-color); font-size: 18px; }
+
+        .progress-container {
+            width: 100%;
+            height: 6px;
+            background: #222;
+            margin-top: 4px;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .progress-fill { height: 100%; transition: width 0.3s ease; }
+
+        /* 覆蓋層 */
+        .overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle, rgba(20,20,30,0.8) 0%, rgba(0,0,0,1) 100%);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            pointer-events: auto;
+        }
+
+        .btn {
+            background: transparent;
+            border: 1px solid var(--ghost-color);
+            color: var(--ghost-color);
+            padding: 12px 30px;
+            margin: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: 0.3s;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+        .btn:hover { background: var(--ghost-color); color: #000; }
+
+        .log-panel {
+            position: absolute;
+            bottom: 25px;
+            left: 25px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            width: 350px;
+            font-size: 13px;
+            color: #ccc;
+            border-left: 3px solid var(--gold-color);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="instructions" style="position:absolute; top:0; left:0; width:100%; height:100%; background:#000; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:100;">
+        <h1 style="letter-spacing:10px; color:var(--gold-color)">REALM OF SHADOW</h1>
+        <p style="color:#666">真實地城：探索、戰鬥、交易 (已調高亮度)</p>
+        <button class="btn" onclick="startGame()">進入地城</button>
+    </div>
+
+    <div id="ui-layer">
+        <div class="info-panel">
+            <div class="stat-line">
+                <span class="stat-label">角色等級</span>
+                <span id="lv" class="stat-val val-highlight">1</span>
+            </div>
+            <div class="stat-line">
+                <span class="stat-label">生命值</span>
+                <span class="stat-val"><span id="hp">100</span> / <span id="maxhp">100</span></span>
+            </div>
+            <div class="progress-container">
+                <div id="hp-bar" class="progress-fill" style="background:var(--accent-color); width:100%;"></div>
+            </div>
+            <div class="stat-line" style="margin-top:12px">
+                <span class="stat-label">攻擊力</span>
+                <span id="atk" class="stat-val">15</span>
+            </div>
+            <div class="stat-line">
+                <span class="stat-label">地城層數</span>
+                <span id="floor" class="stat-val">1</span>
+            </div>
+            <div class="stat-line">
+                <span class="stat-label">持有金幣</span>
+                <span id="gold" class="stat-val" style="color:var(--gold-color)">0</span>
+            </div>
+            <div class="stat-line" style="margin-top:8px">
+                <span class="stat-label">經驗值</span>
+                <span class="stat-val"><span id="exp">0</span> %</span>
+            </div>
+            <div class="progress-container">
+                <div id="exp-bar" class="progress-fill" style="background:var(--ghost-color); width:0%;"></div>
+            </div>
+        </div>
+        <div class="log-panel" id="log">> 系統初始化完畢。</div>
+    </div>
+
+    <div id="shop-overlay" class="overlay">
+        <h2 style="color:var(--gold-color)">流浪商人</h2>
+        <div style="background:#111; padding:20px; border:1px solid #333; margin-bottom:20px; text-align:center;">
+            <p>「活下去，才是最大的勝利。」</p>
+            <button class="btn" onclick="buyItem('heal', 20)">補給藥水 (20G)</button>
+            <button class="btn" onclick="buyItem('atk', 40)">磨刀石 (40G)</button>
+        </div>
+        <button class="btn" style="border-color:#555; color:#555" onclick="closeUI('shop-overlay')">關閉</button>
+    </div>
+
+    <div id="battle-overlay" class="overlay">
+        <h2 id="enemy-name" style="color:var(--accent-color)">遭遇敵意反應</h2>
+        <div id="enemy-visual" style="font-size:60px; margin:20px">💀</div>
+        <p>敵方體力: <span id="e-hp">?</span></p>
+        <button class="btn" onclick="battleAction('attack')">發動攻擊</button>
+        <button class="btn" onclick="battleAction('defend')">重整態勢</button>
+    </div>
+
+    <script>
+        let scene, camera, renderer, flashLight, clock;
+        let mapSize = 20;
+        let mapData = [];
+        let player = { hp: 100, maxHp: 100, atk: 15, gold: 0, floor: 1, lv: 1, exp: 0 };
+        let gameState = 'title';
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+        let enemies = [], chests = [], shops = [];
+        let currentEnemy = null;
+
+        function init() {
+            scene = new THREE.Scene();
+            // 調低霧氣密度，讓視野更開闊 (從 0.25 降到 0.15)
+            scene.fog = new THREE.FogExp2(0x000000, 0.15);
+
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+            clock = new THREE.Clock();
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // 調高手電筒強度 (從 2.5 提升到 4.5) 與 照射範圍 (從 18 提升到 25)
+            flashLight = new THREE.SpotLight(0xfff5e0, 4.5, 25, Math.PI / 4, 0.4, 1.2);
+            flashLight.castShadow = true;
+            scene.add(flashLight);
+            scene.add(flashLight.target);
+
+            // 調高環境光強度 (從 0.2 提升到 0.5)，讓陰影處不再全黑
+            const ambient = new THREE.AmbientLight(0x444455, 0.5);
+            scene.add(ambient);
+
+            generateMap();
+            updateUI();
+
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('keydown', e => handleKey(e.code, true));
+            document.addEventListener('keyup', e => handleKey(e.code, false));
+            document.addEventListener('mousemove', onMouseMove);
+            animate();
+        }
+
+        function startGame() {
+            document.getElementById('instructions').style.display = 'none';
+            document.body.requestPointerLock();
+            gameState = 'explore';
+            addLog("進入地城。照明設備已強化，視野更加清晰。");
+        }
+
+        function handleKey(code, isDown) {
+            if (code === 'KeyW') moveForward = isDown;
+            if (code === 'KeyS') moveBackward = isDown;
+            if (code === 'KeyA') moveLeft = isDown;
+            if (code === 'KeyD') moveRight = isDown;
+        }
+
+        function onMouseMove(e) {
+            if (document.pointerLockElement === document.body && gameState === 'explore') {
+                camera.rotation.y -= e.movementX * 0.002;
+                let pitch = camera.rotation.x - e.movementY * 0.002;
+                camera.rotation.x = Math.max(-Math.PI/3, Math.min(Math.PI/3, pitch));
+            }
+        }
+
+        function generateMap() {
+            for(let i = scene.children.length - 1; i >= 0; i--) {
+                const obj = scene.children[i];
+                if(obj.isMesh || obj.type === 'Group') scene.remove(obj);
+            }
+            enemies = []; chests = []; shops = [];
+
+            const floorGeo = new THREE.PlaneGeometry(mapSize, mapSize);
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI/2;
+            floor.position.set(mapSize/2-0.5, -0.5, mapSize/2-0.5);
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+            mapData = [];
+            for (let z = 0; z < mapSize; z++) {
+                mapData[z] = [];
+                for (let x = 0; x < mapSize; x++) {
+                    let isWall = (x === 0 || z === 0 || x === mapSize - 1 || z === mapSize - 1 || (Math.random() < 0.22 && x+z > 4));
+                    if ((x === 1 && z === 1) || (x === mapSize - 2 && z === mapSize - 2)) isWall = false;
+                    mapData[z][x] = isWall ? 1 : 0;
+
+                    if (isWall) {
+                        let h = 2.5 + Math.random() * 0.5;
+                        const wall = new THREE.Mesh(new THREE.BoxGeometry(1, h, 1), wallMat);
+                        wall.position.set(x, h/2 - 0.5, z);
+                        wall.castShadow = true;
+                        wall.receiveShadow = true;
+                        scene.add(wall);
+                    } else {
+                        let r = Math.random();
+                        if (r < 0.03 && x+z > 6) spawnEnemy(x, z);
+                        else if (r < 0.05 && x+z > 4) spawnChest(x, z);
+                        else if (r < 0.06 && shops.length === 0 && x+z > 10) spawnShop(x, z);
+                    }
+                }
+            }
+
+            const exitGeo = new THREE.BoxGeometry(0.8, 0.05, 0.8);
+            const exitMat = new THREE.MeshBasicMaterial({ color: 0x00f2ff });
+            const exit = new THREE.Mesh(exitGeo, exitMat);
+            exit.position.set(mapSize - 2, -0.48, mapSize - 2);
+            scene.add(exit);
+            camera.position.set(1, 0, 1);
+        }
+
+        function spawnEnemy(x, z) {
+            const group = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.OctahedronGeometry(0.25), new THREE.MeshStandardMaterial({color: 0xff3333, emissive: 0x220000}));
+            group.add(body);
+            group.position.set(x, 0, z);
+            scene.add(group);
+            enemies.push({ mesh: group, hp: 40 + player.floor*15, gold: 15 + player.floor*5 });
+        }
+
+        function spawnChest(x, z) {
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.25, 0.25), new THREE.MeshStandardMaterial({color: 0xaa8800}));
+            mesh.position.set(x, -0.3, z);
+            scene.add(mesh);
+            chests.push({ mesh });
+        }
+
+        function spawnShop(x, z) {
+            const mesh = new THREE.Mesh(new THREE.TorusKnotGeometry(0.2, 0.05), new THREE.MeshBasicMaterial({color: 0x00f2ff, wireframe: true}));
+            mesh.position.set(x, 0.2, z);
+            scene.add(mesh);
+            shops.push({ mesh });
+        }
+
+        function updatePhysics(delta) {
+            if (gameState !== 'explore') return;
+
+            velocity.x -= velocity.x * 10.0 * delta;
+            velocity.z -= velocity.z * 10.0 * delta;
+
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+            direction.normalize();
+
+            const camDir = new THREE.Vector3();
+            camera.getWorldDirection(camDir);
+            camDir.y = 0; camDir.normalize();
+            const camSide = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), camDir).negate();
+
+            if (moveForward || moveBackward) velocity.addScaledVector(camDir, 28.0 * direction.z * delta);
+            if (moveLeft || moveRight) velocity.addScaledVector(camSide, 28.0 * direction.x * delta);
+
+            const isBlocked = (p) => {
+                let gx = Math.round(p.x), gz = Math.round(p.z);
+                return (gx < 0 || gz < 0 || gx >= mapSize || gz >= mapSize || mapData[gz][gx] === 1);
+            };
+
+            let nextX = camera.position.clone().add(new THREE.Vector3(velocity.x * delta, 0, 0));
+            if (!isBlocked(nextX)) camera.position.x = nextX.x;
+            let nextZ = camera.position.clone().add(new THREE.Vector3(0, 0, velocity.z * delta));
+            if (!isBlocked(nextZ)) camera.position.z = nextZ.z;
+
+            enemies.forEach((en, i) => {
+                if(camera.position.distanceTo(en.mesh.position) < 0.6) {
+                    gameState = 'battle';
+                    currentEnemy = { ...en, index: i };
+                    document.exitPointerLock();
+                    document.getElementById('battle-overlay').style.display = 'flex';
+                    document.getElementById('e-hp').innerText = en.hp;
+                    addLog("遭遇敵方生物，進入戰鬥狀態。");
+                }
+            });
+
+            chests.forEach((ch, i) => {
+                if(camera.position.distanceTo(ch.mesh.position) < 0.6) {
+                    scene.remove(ch.mesh); chests.splice(i, 1);
+                    let g = 20 + Math.floor(Math.random()*30);
+                    player.gold += g; gainExp(20);
+                    addLog(`開啟寶箱，獲得 ${g} 枚金幣。`); updateUI();
+                }
+            });
+
+            shops.forEach(sh => {
+                if(camera.position.distanceTo(sh.mesh.position) < 0.7) {
+                    gameState = 'shop'; document.exitPointerLock();
+                    document.getElementById('shop-overlay').style.display = 'flex';
+                }
+            });
+
+            if(Math.round(camera.position.x) === mapSize-2 && Math.round(camera.position.z) === mapSize-2) {
+                player.floor++; addLog(`進入深淵第 ${player.floor} 層。`); generateMap();
+            }
+        }
+
+        function battleAction(type) {
+            if(type === 'attack') {
+                let d = player.atk + Math.floor(Math.random()*8);
+                currentEnemy.hp -= d; addLog(`你發動攻擊，造成 ${d} 點傷害。`);
+            } else {
+                player.hp = Math.min(player.maxHp, player.hp + 20);
+                addLog(`防禦成功，恢復少量生命值。`);
+            }
+
+            if(currentEnemy.hp <= 0) {
+                scene.remove(enemies[currentEnemy.index].mesh);
+                enemies.splice(currentEnemy.index, 1);
+                player.gold += currentEnemy.gold;
+                gainExp(50);
+                addLog(`敵人瓦解，獲得 ${currentEnemy.gold} 金幣與經驗值。`);
+                closeUI('battle-overlay');
+            } else {
+                let ed = 8 + player.floor*2 + Math.floor(Math.random()*6);
+                player.hp -= ed; addLog(`遭受反擊，失去 ${ed} 點生命。`);
+                if(player.hp <= 0) { alert("意識斷開，你未能生還。"); location.reload(); }
+            }
+            updateUI();
+        }
+
+        function gainExp(amt) {
+            player.exp += amt;
+            if(player.exp >= 100) {
+                player.lv++; player.exp -= 100; player.atk += 4; player.maxHp += 15; player.hp = player.maxHp;
+                addLog(`等級提升至 Lv.${player.lv}！身體素質強化。`);
+            }
+            updateUI();
+        }
+
+        function buyItem(type, cost) {
+            if(player.gold < cost) { addLog("資源不足。"); return; }
+            player.gold -= cost;
+            if(type === 'heal') { player.hp = player.maxHp; addLog("生命力完全恢復。"); }
+            if(type === 'atk') { player.atk += 6; addLog("攻擊力永久提升。"); }
+            updateUI();
+        }
+
+        function closeUI(id) {
+            document.getElementById(id).style.display = 'none';
+            document.body.requestPointerLock();
+            gameState = 'explore';
+            currentEnemy = null;
+        }
+
+        function updateUI() {
+            document.getElementById('hp').innerText = Math.max(0, player.hp);
+            document.getElementById('maxhp').innerText = player.maxHp;
+            document.getElementById('atk').innerText = player.atk;
+            document.getElementById('gold').innerText = player.gold;
+            document.getElementById('lv').innerText = player.lv;
+            document.getElementById('floor').innerText = player.floor;
+            document.getElementById('exp').innerText = Math.floor(player.exp);
+            document.getElementById('hp-bar').style.width = (player.hp/player.maxHp*100) + '%';
+            document.getElementById('exp-bar').style.width = player.exp + '%';
+            if(currentEnemy) document.getElementById('e-hp').innerText = currentEnemy.hp;
+        }
+
+        function addLog(msg) {
+            const log = document.getElementById('log');
+            log.innerHTML = `> ${msg}<br>` + log.innerHTML;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            updatePhysics(delta);
+
+            flashLight.position.copy(camera.position);
+            const targetPos = new THREE.Vector3();
+            camera.getWorldDirection(targetPos);
+            flashLight.target.position.copy(camera.position).add(targetPos);
+
+            const time = Date.now() * 0.002;
+            enemies.forEach(en => {
+                en.mesh.rotation.y += 0.04;
+                en.mesh.position.y = Math.sin(time) * 0.1;
+            });
+            shops.forEach(sh => {
+                sh.mesh.rotation.x += 0.01;
+                sh.mesh.rotation.z += 0.02;
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
